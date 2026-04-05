@@ -166,6 +166,15 @@ func main() {
 }
 ```
 
+## Usage Examples Summary
+
+| Description | Directory | Run Command |
+|-------------|-----------|-------------|
+| Create and configure TradingClient instance | [examples/trading_client](examples/trading_client/main.go) | `go run ./examples/trading_client` |
+| Share infrastructure across multiple wallets | [examples/shared_infrastructure](examples/shared_infrastructure/main.go) | `go run ./examples/shared_infrastructure` |
+| PumpFun token sniping trading | [examples/pumpfun_sniper_trading](examples/pumpfun_sniper_trading/main.go) | `go run ./examples/pumpfun_sniper_trading` |
+| Gas fee strategy example | [examples/gas_fee_strategy](examples/gas_fee_strategy/main.go) | `go run ./examples/gas_fee_strategy` |
+
 ## Address Lookup Tables
 
 ```go
