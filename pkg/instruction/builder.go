@@ -337,7 +337,357 @@ func CreateInstructionBuilder(dexType soltradesdk.DexType) (InstructionBuilder, 
 		return NewPumpFunInstructionBuilder(), nil
 	case soltradesdk.DexTypePumpSwap:
 		return NewPumpSwapInstructionBuilder(), nil
+	case soltradesdk.DexTypeBonk:
+		return NewBonkInstructionBuilder(), nil
+	case soltradesdk.DexTypeRaydiumCPMM:
+		return NewRaydiumCPMMInstructionBuilder(), nil
+	case soltradesdk.DexTypeRaydiumAmmV4:
+		return NewRaydiumAmmV4InstructionBuilder(), nil
+	case soltradesdk.DexTypeMeteoraDammV2:
+		return NewMeteoraDammV2InstructionBuilder(), nil
 	default:
 		return nil, fmt.Errorf("unsupported DEX type: %v", dexType)
 	}
+}
+
+// ===== Bonk Instruction Builder =====
+
+// BonkInstructionBuilder builds instructions for Bonk protocol
+type BonkInstructionBuilder struct{}
+
+// NewBonkInstructionBuilder creates a new Bonk instruction builder
+func NewBonkInstructionBuilder() *BonkInstructionBuilder {
+	return &BonkInstructionBuilder{}
+}
+
+// Bonk discriminators
+var (
+	BONK_BUY_DISCRIMINATOR  = []byte{102, 6, 61, 18, 1, 218, 235, 234}
+	BONK_SELL_DISCRIMINATOR = []byte{51, 230, 133, 164, 1, 127, 131, 173}
+)
+
+// BuildBuyInstructions builds buy instructions for Bonk
+func (b *BonkInstructionBuilder) BuildBuyInstructions(bp *BuildParams) ([]solana.Instruction, error) {
+	protocolParams, ok := bp.ProtocolParams.(*params.BonkParams)
+	if !ok {
+		return nil, soltradesdk.ErrInvalidProtocolParams
+	}
+
+	if bp.InputAmount == 0 {
+		return nil, soltradesdk.ErrInvalidAmount
+	}
+
+	var instructions []solana.Instruction
+
+	// Create ATA if needed
+	if bp.CreateOutputATA {
+		createATAIx := CreateAssociatedTokenAccountInstruction(
+			bp.Payer,
+			bp.Payer,
+			bp.OutputMint,
+			protocolParams.TokenProgram,
+		)
+		instructions = append(instructions, createATAIx)
+	}
+
+	// Build instruction data
+	data := make([]byte, 24)
+	copy(data[0:8], BONK_BUY_DISCRIMINATOR)
+	copy(data[8:16], uint64ToLEBytes(bp.InputAmount)[:])
+	minAmountOut := calculateMinOutput(0, bp.SlippageBasisPoints)
+	copy(data[16:24], uint64ToLEBytes(minAmountOut)[:])
+
+	// Build accounts
+	accounts := []solana.AccountMeta{
+		{PublicKey: protocolParams.PoolState, IsSigner: false, IsWritable: true},
+		{PublicKey: bp.OutputMint, IsSigner: false, IsWritable: false}, // base mint
+		{PublicKey: bp.InputMint, IsSigner: false, IsWritable: false},  // quote mint
+		{PublicKey: protocolParams.BaseVault, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.QuoteVault, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.PlatformConfig, IsSigner: false, IsWritable: false},
+		{PublicKey: protocolParams.PlatformAssociatedAccount, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.CreatorAssociatedAccount, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.GlobalConfig, IsSigner: false, IsWritable: false},
+		{PublicKey: protocolParams.UserBaseTokenAccount, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.UserQuoteTokenAccount, IsSigner: false, IsWritable: true},
+		{PublicKey: bp.Payer, IsSigner: true, IsWritable: true},
+		{PublicKey: constants.TOKEN_PROGRAM, IsSigner: false, IsWritable: false},
+		{PublicKey: constants.SYSTEM_PROGRAM, IsSigner: false, IsWritable: false},
+	}
+
+	buyIx := solana.NewInstruction(constants.BONK_PROGRAM_ID, accounts, data)
+	instructions = append(instructions, buyIx)
+
+	return instructions, nil
+}
+
+// BuildSellInstructions builds sell instructions for Bonk
+func (b *BonkInstructionBuilder) BuildSellInstructions(bp *BuildParams) ([]solana.Instruction, error) {
+	protocolParams, ok := bp.ProtocolParams.(*params.BonkParams)
+	if !ok {
+		return nil, soltradesdk.ErrInvalidProtocolParams
+	}
+
+	if bp.InputAmount == 0 {
+		return nil, soltradesdk.ErrInvalidAmount
+	}
+
+	var instructions []solana.Instruction
+
+	// Build instruction data
+	data := make([]byte, 24)
+	copy(data[0:8], BONK_SELL_DISCRIMINATOR)
+	copy(data[8:16], uint64ToLEBytes(bp.InputAmount)[:])
+	minAmountOut := calculateMinOutput(0, bp.SlippageBasisPoints)
+	copy(data[16:24], uint64ToLEBytes(minAmountOut)[:])
+
+	// Build accounts (swap mints for sell)
+	accounts := []solana.AccountMeta{
+		{PublicKey: protocolParams.PoolState, IsSigner: false, IsWritable: true},
+		{PublicKey: bp.InputMint, IsSigner: false, IsWritable: false}, // base mint (selling)
+		{PublicKey: bp.OutputMint, IsSigner: false, IsWritable: false}, // quote mint
+		{PublicKey: protocolParams.BaseVault, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.QuoteVault, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.PlatformConfig, IsSigner: false, IsWritable: false},
+		{PublicKey: protocolParams.PlatformAssociatedAccount, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.CreatorAssociatedAccount, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.GlobalConfig, IsSigner: false, IsWritable: false},
+		{PublicKey: protocolParams.UserBaseTokenAccount, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.UserQuoteTokenAccount, IsSigner: false, IsWritable: true},
+		{PublicKey: bp.Payer, IsSigner: true, IsWritable: true},
+		{PublicKey: constants.TOKEN_PROGRAM, IsSigner: false, IsWritable: false},
+		{PublicKey: constants.SYSTEM_PROGRAM, IsSigner: false, IsWritable: false},
+	}
+
+	sellIx := solana.NewInstruction(constants.BONK_PROGRAM_ID, accounts, data)
+	instructions = append(instructions, sellIx)
+
+	return instructions, nil
+}
+
+// ===== Raydium CPMM Instruction Builder =====
+
+// RaydiumCPMMInstructionBuilder builds instructions for Raydium CPMM protocol
+type RaydiumCPMMInstructionBuilder struct{}
+
+// NewRaydiumCPMMInstructionBuilder creates a new Raydium CPMM instruction builder
+func NewRaydiumCPMMInstructionBuilder() *RaydiumCPMMInstructionBuilder {
+	return &RaydiumCPMMInstructionBuilder{}
+}
+
+// Raydium CPMM discriminators
+var (
+	RAYDIUM_CPMM_SWAP_DISCRIMINATOR = []byte{248, 198, 158, 145, 225, 117, 135, 200}
+)
+
+// BuildBuyInstructions builds buy instructions for Raydium CPMM
+func (b *RaydiumCPMMInstructionBuilder) BuildBuyInstructions(bp *BuildParams) ([]solana.Instruction, error) {
+	protocolParams, ok := bp.ProtocolParams.(*params.RaydiumCPMMParams)
+	if !ok {
+		return nil, soltradesdk.ErrInvalidProtocolParams
+	}
+
+	if bp.InputAmount == 0 {
+		return nil, soltradesdk.ErrInvalidAmount
+	}
+
+	var instructions []solana.Instruction
+
+	// Create ATA if needed
+	if bp.CreateOutputATA {
+		createATAIx := CreateAssociatedTokenAccountInstruction(
+			bp.Payer,
+			bp.Payer,
+			bp.OutputMint,
+			protocolParams.TokenProgram,
+		)
+		instructions = append(instructions, createATAIx)
+	}
+
+	// Build instruction data
+	data := make([]byte, 24)
+	copy(data[0:8], RAYDIUM_CPMM_SWAP_DISCRIMINATOR)
+	copy(data[8:16], uint64ToLEBytes(bp.InputAmount)[:])
+	minAmountOut := calculateMinOutput(0, bp.SlippageBasisPoints)
+	copy(data[16:24], uint64ToLEBytes(minAmountOut)[:])
+
+	// Build accounts
+	accounts := []solana.AccountMeta{
+		{PublicKey: bp.Payer, IsSigner: true, IsWritable: true},
+		{PublicKey: protocolParams.Authority, IsSigner: false, IsWritable: false},
+		{PublicKey: protocolParams.AmmConfig, IsSigner: false, IsWritable: false},
+		{PublicKey: protocolParams.PoolState, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.InputTokenAccount, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.OutputTokenAccount, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.InputVault, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.OutputVault, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.InputTokenProgram, IsSigner: false, IsWritable: false},
+		{PublicKey: protocolParams.OutputTokenProgram, IsSigner: false, IsWritable: false},
+		{PublicKey: bp.InputMint, IsSigner: false, IsWritable: false},
+		{PublicKey: bp.OutputMint, IsSigner: false, IsWritable: false},
+		{PublicKey: protocolParams.ObservationState, IsSigner: false, IsWritable: true},
+	}
+
+	swapIx := solana.NewInstruction(constants.RAYDIUM_CPMM_PROGRAM_ID, accounts, data)
+	instructions = append(instructions, swapIx)
+
+	return instructions, nil
+}
+
+// BuildSellInstructions builds sell instructions for Raydium CPMM
+func (b *RaydiumCPMMInstructionBuilder) BuildSellInstructions(bp *BuildParams) ([]solana.Instruction, error) {
+	// Same as buy but with swapped input/output
+	return b.BuildBuyInstructions(bp)
+}
+
+// ===== Raydium AMM V4 Instruction Builder =====
+
+// RaydiumAmmV4InstructionBuilder builds instructions for Raydium AMM V4 protocol
+type RaydiumAmmV4InstructionBuilder struct{}
+
+// NewRaydiumAmmV4InstructionBuilder creates a new Raydium AMM V4 instruction builder
+func NewRaydiumAmmV4InstructionBuilder() *RaydiumAmmV4InstructionBuilder {
+	return &RaydiumAmmV4InstructionBuilder{}
+}
+
+// Raydium AMM V4 discriminators
+var (
+	RAYDIUM_AMM_V4_SWAP_DISCRIMINATOR = []byte{248, 198, 158, 145, 225, 117, 135, 200}
+)
+
+// BuildBuyInstructions builds buy instructions for Raydium AMM V4
+func (b *RaydiumAmmV4InstructionBuilder) BuildBuyInstructions(bp *BuildParams) ([]solana.Instruction, error) {
+	protocolParams, ok := bp.ProtocolParams.(*params.RaydiumAmmV4Params)
+	if !ok {
+		return nil, soltradesdk.ErrInvalidProtocolParams
+	}
+
+	if bp.InputAmount == 0 {
+		return nil, soltradesdk.ErrInvalidAmount
+	}
+
+	var instructions []solana.Instruction
+
+	// Create ATA if needed
+	if bp.CreateOutputATA {
+		createATAIx := CreateAssociatedTokenAccountInstruction(
+			bp.Payer,
+			bp.Payer,
+			bp.OutputMint,
+			protocolParams.TokenProgram,
+		)
+		instructions = append(instructions, createATAIx)
+	}
+
+	// Build instruction data
+	data := make([]byte, 24)
+	copy(data[0:8], RAYDIUM_AMM_V4_SWAP_DISCRIMINATOR)
+	copy(data[8:16], uint64ToLEBytes(bp.InputAmount)[:])
+	minAmountOut := calculateMinOutput(0, bp.SlippageBasisPoints)
+	copy(data[16:24], uint64ToLEBytes(minAmountOut)[:])
+
+	// Build accounts (17 accounts for Raydium AMM V4 swap)
+	accounts := []solana.AccountMeta{
+		{PublicKey: protocolParams.Amm, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.AmmAuthority, IsSigner: false, IsWritable: false},
+		{PublicKey: protocolParams.AmmOpenOrders, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.AmmTargetOrders, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.PoolCoinTokenAccount, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.PoolPcTokenAccount, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.SerumProgram, IsSigner: false, IsWritable: false},
+		{PublicKey: protocolParams.SerumMarket, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.SerumBids, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.SerumAsks, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.SerumEventQueue, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.SerumCoinVaultAccount, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.SerumPcVaultAccount, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.SerumVaultSigner, IsSigner: false, IsWritable: false},
+		{PublicKey: protocolParams.UserSourceTokenAccount, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.UserDestinationTokenAccount, IsSigner: false, IsWritable: true},
+		{PublicKey: bp.Payer, IsSigner: true, IsWritable: false},
+	}
+
+	swapIx := solana.NewInstruction(constants.RAYDIUM_AMM_V4_PROGRAM_ID, accounts, data)
+	instructions = append(instructions, swapIx)
+
+	return instructions, nil
+}
+
+// BuildSellInstructions builds sell instructions for Raydium AMM V4
+func (b *RaydiumAmmV4InstructionBuilder) BuildSellInstructions(bp *BuildParams) ([]solana.Instruction, error) {
+	// Same as buy but with swapped input/output
+	return b.BuildBuyInstructions(bp)
+}
+
+// ===== Meteora DAMM V2 Instruction Builder =====
+
+// MeteoraDammV2InstructionBuilder builds instructions for Meteora DAMM V2 protocol
+type MeteoraDammV2InstructionBuilder struct{}
+
+// NewMeteoraDammV2InstructionBuilder creates a new Meteora DAMM V2 instruction builder
+func NewMeteoraDammV2InstructionBuilder() *MeteoraDammV2InstructionBuilder {
+	return &MeteoraDammV2InstructionBuilder{}
+}
+
+// Meteora DAMM V2 discriminators
+var (
+	METEORA_DAMM_V2_SWAP_DISCRIMINATOR = []byte{248, 198, 158, 145, 225, 117, 135, 200}
+)
+
+// BuildBuyInstructions builds buy instructions for Meteora DAMM V2
+func (b *MeteoraDammV2InstructionBuilder) BuildBuyInstructions(bp *BuildParams) ([]solana.Instruction, error) {
+	protocolParams, ok := bp.ProtocolParams.(*params.MeteoraDammV2Params)
+	if !ok {
+		return nil, soltradesdk.ErrInvalidProtocolParams
+	}
+
+	if bp.InputAmount == 0 {
+		return nil, soltradesdk.ErrInvalidAmount
+	}
+
+	var instructions []solana.Instruction
+
+	// Create ATA if needed
+	if bp.CreateOutputATA {
+		createATAIx := CreateAssociatedTokenAccountInstruction(
+			bp.Payer,
+			bp.Payer,
+			bp.OutputMint,
+			protocolParams.TokenAProgram,
+		)
+		instructions = append(instructions, createATAIx)
+	}
+
+	// Build instruction data
+	data := make([]byte, 24)
+	copy(data[0:8], METEORA_DAMM_V2_SWAP_DISCRIMINATOR)
+	copy(data[8:16], uint64ToLEBytes(bp.InputAmount)[:])
+	minAmountOut := calculateMinOutput(0, bp.SlippageBasisPoints)
+	copy(data[16:24], uint64ToLEBytes(minAmountOut)[:])
+
+	// Build accounts
+	accounts := []solana.AccountMeta{
+		{PublicKey: bp.Payer, IsSigner: true, IsWritable: true},
+		{PublicKey: protocolParams.Pool, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.TokenAVault, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.TokenBVault, IsSigner: false, IsWritable: true},
+		{PublicKey: bp.InputMint, IsSigner: false, IsWritable: false},
+		{PublicKey: bp.OutputMint, IsSigner: false, IsWritable: false},
+		{PublicKey: protocolParams.UserSourceTokenAccount, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.UserDestinationTokenAccount, IsSigner: false, IsWritable: true},
+		{PublicKey: protocolParams.TokenAProgram, IsSigner: false, IsWritable: false},
+		{PublicKey: protocolParams.TokenBProgram, IsSigner: false, IsWritable: false},
+		{PublicKey: constants.SYSTEM_PROGRAM, IsSigner: false, IsWritable: false},
+	}
+
+	swapIx := solana.NewInstruction(constants.METEORA_DAMM_V2_PROGRAM_ID, accounts, data)
+	instructions = append(instructions, swapIx)
+
+	return instructions, nil
+}
+
+// BuildSellInstructions builds sell instructions for Meteora DAMM V2
+func (b *MeteoraDammV2InstructionBuilder) BuildSellInstructions(bp *BuildParams) ([]solana.Instruction, error) {
+	// Same as buy but with swapped input/output
+	return b.BuildBuyInstructions(bp)
 }

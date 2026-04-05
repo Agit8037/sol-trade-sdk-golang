@@ -567,6 +567,122 @@ func CalculatePrice(quoteReserve uint64, baseReserve uint64, quoteDecimals uint8
 	return quoteAdjusted / baseAdjusted
 }
 
+// ===== Meteora DAMM V2 Calculations =====
+
+// MeteoraSwapResult contains the result of a Meteora swap calculation
+type MeteoraSwapResult struct {
+	AmountOut     uint64
+	MinAmountOut  uint64
+}
+
+// MeteoraDammV2ComputeSwapAmount calculates swap amount for Meteora DAMM V2
+func MeteoraDammV2ComputeSwapAmount(
+	tokenAReserve uint64,
+	tokenBReserve uint64,
+	isAToB bool,
+	amountIn uint64,
+	slippageBasisPoints uint64,
+) *MeteoraSwapResult {
+	if amountIn == 0 {
+		return &MeteoraSwapResult{AmountOut: 0, MinAmountOut: 0}
+	}
+
+	var amountOut uint64
+
+	if isAToB {
+		// Swapping token A for token B
+		if tokenAReserve == 0 {
+			return &MeteoraSwapResult{AmountOut: 0, MinAmountOut: 0}
+		}
+
+		// Constant product: b_out = (b_reserve * a_in) / (a_reserve + a_in)
+		numerator := uint128(tokenBReserve) * uint128(amountIn)
+		denominator := uint128(tokenAReserve) + uint128(amountIn)
+
+		if denominator == 0 {
+			return &MeteoraSwapResult{AmountOut: 0, MinAmountOut: 0}
+		}
+
+		amountOut = uint64(numerator / denominator)
+	} else {
+		// Swapping token B for token A
+		if tokenBReserve == 0 {
+			return &MeteoraSwapResult{AmountOut: 0, MinAmountOut: 0}
+		}
+
+		// Constant product: a_out = (a_reserve * b_in) / (b_reserve + b_in)
+		numerator := uint128(tokenAReserve) * uint128(amountIn)
+		denominator := uint128(tokenBReserve) + uint128(amountIn)
+
+		if denominator == 0 {
+			return &MeteoraSwapResult{AmountOut: 0, MinAmountOut: 0}
+		}
+
+		amountOut = uint64(numerator / denominator)
+	}
+
+	// Apply slippage
+	minAmountOut, _ := CalculateWithSlippageSell(amountOut, slippageBasisPoints)
+
+	return &MeteoraSwapResult{
+		AmountOut:    amountOut,
+		MinAmountOut: minAmountOut,
+	}
+}
+
+// MeteoraDammV2CalculatePrice calculates current price (token B per token A)
+func MeteoraDammV2CalculatePrice(tokenAReserve uint64, tokenBReserve uint64) float64 {
+	if tokenAReserve == 0 {
+		return 0.0
+	}
+	return float64(tokenBReserve) / float64(tokenAReserve)
+}
+
+// MeteoraDammV2CalculateLiquidity calculates liquidity (geometric mean of reserves)
+func MeteoraDammV2CalculateLiquidity(tokenAReserve uint64, tokenBReserve uint64) uint64 {
+	if tokenAReserve == 0 || tokenBReserve == 0 {
+		return 0
+	}
+	return uint64(math.Sqrt(float64(tokenAReserve) * float64(tokenBReserve)))
+}
+
+// MeteoraDammV2GetAmountOut calculates output amount with fee consideration
+func MeteoraDammV2GetAmountOut(
+	amountIn uint64,
+	inputReserve uint64,
+	outputReserve uint64,
+	feeBasisPoints uint64,
+) uint64 {
+	if inputReserve == 0 || outputReserve == 0 || amountIn == 0 {
+		return 0
+	}
+
+	// Apply fee
+	amountInAfterFee := (uint128(amountIn) * (10000 - uint128(feeBasisPoints))) / 10000
+
+	numerator := amountInAfterFee * uint128(outputReserve)
+	denominator := uint128(inputReserve) + amountInAfterFee
+
+	return uint64(numerator / denominator)
+}
+
+// MeteoraDammV2GetAmountIn calculates input amount needed for desired output
+func MeteoraDammV2GetAmountIn(
+	amountOut uint64,
+	inputReserve uint64,
+	outputReserve uint64,
+	feeBasisPoints uint64,
+) uint64 {
+	if inputReserve == 0 || outputReserve == 0 || amountOut >= outputReserve {
+		return 0
+	}
+
+	numerator := uint128(inputReserve) * uint128(amountOut) * 10000
+	denominator := (uint128(outputReserve) - uint128(amountOut)) * (10000 - uint128(feeBasisPoints))
+
+	return uint64(CeilDiv(uint64(numerator), uint64(denominator)))
+}
+
 // ===== Utility Types =====
 
 type uint128 = uint64 // Simplified for Go - full implementation would use math/big

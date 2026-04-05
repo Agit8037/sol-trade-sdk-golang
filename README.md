@@ -33,10 +33,11 @@ A comprehensive, high-performance Go SDK for Solana DEX trading with support for
 ## Features
 
 - **Multiple DEX Support**: PumpFun, PumpSwap, Bonk, Raydium AMM V4, Raydium CPMM, Meteora DAMM V2
-- **SWQoS Integration**: Jito, Bloxroute, ZeroSlot, Temporal, FlashBlock, Helius, and more
+- **19 SWQoS Providers**: Jito, Bloxroute, ZeroSlot, NextBlock, Temporal, Node1, FlashBlock, BlockRazor, Astralane, Stellium, Lightspeed, Soyas, Speedlanding, Helius, Triton, QuickNode, Syndica, Figment, Alchemy
 - **High Performance**: LRU/TTL/Sharded caching, connection pooling, parallel execution
 - **Low Latency**: Optimized for sub-second trade execution
 - **Security First**: Integer overflow protection with `math/bits`, proper error handling
+- **Zero-RPC Hot Path**: All RPC calls happen BEFORE trading execution
 - **Type Safety**: Strongly typed with comprehensive error returns
 - **Modular Design**: Use only what you need
 
@@ -47,6 +48,8 @@ go get github.com/0xfnzero/sol-trade-sdk-golang
 ```
 
 ## Quick Start
+
+### Basic Trading
 
 ```go
 package main
@@ -59,6 +62,7 @@ import (
     soltradesdk "github.com/0xfnzero/sol-trade-sdk-golang"
     "github.com/0xfnzero/sol-trade-sdk-golang/pkg/common"
     "github.com/0xfnzero/sol-trade-sdk-golang/pkg/trading"
+    "github.com/gagliardetto/solana-go/rpc"
 )
 
 func main() {
@@ -69,12 +73,12 @@ func main() {
     gasStrategy.SetGlobalFeeStrategy(200000, 200000, 100000, 100000, 0.001, 0.001)
 
     // Create RPC client
-    rpcClient := common.NewRPCClient("https://api.mainnet-beta.solana.com")
+    rpcClient := rpc.New("https://api.mainnet-beta.solana.com")
 
     // Create trade executor
-    config := &trading.Config{
-        SwqosConfigs: []common.SwqosConfig{
-            {Type: common.SwqosTypeJito},
+    config := &soltradesdk.TradeConfig{
+        SwqosConfigs: []soltradesdk.SwqosConfig{
+            {Type: soltradesdk.SwqosTypeJito},
         },
     }
     executor := trading.NewTradeExecutor(rpcClient, config, gasStrategy)
@@ -88,23 +92,142 @@ func main() {
 }
 ```
 
+### High-Performance Executor
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+
+    "github.com/0xfnzero/sol-trade-sdk-golang/pkg/trading"
+    soltradesdk "github.com/0xfnzero/sol-trade-sdk-golang"
+)
+
+func main() {
+    ctx := context.Background()
+
+    config := &trading.HighPerfTradeConfig{
+        RPCUrl: "https://api.mainnet-beta.solana.com",
+        SWQoSConfigs: []soltradesdk.SwqosConfig{
+            {Type: soltradesdk.SwqosTypeJito},
+            {Type: soltradesdk.SwqosTypeBloxroute},
+        },
+        MaxWorkers:             10,
+        ConfirmationTimeoutMs:  30000,
+        ConfirmationRetryCount: 30,
+        RateLimitPerSecond:     100.0,
+    }
+
+    executor, err := trading.NewHighPerfTradeExecutor(config)
+    if err != nil {
+        panic(err)
+    }
+    defer executor.Close()
+
+    // Execute with parallel submission
+    result := executor.Execute(ctx, soltradesdk.TradeTypeBuy, txBytes, nil)
+    fmt.Printf("Success: %v, Signature: %s\n", result.Success, result.Signature)
+}
+```
+
+### Trading with Factory
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+
+    "github.com/0xfnzero/sol-trade-sdk-golang/pkg/trading"
+    soltradesdk "github.com/0xfnzero/sol-trade-sdk-golang"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // Create factory with base executor
+    factory := trading.NewTradeExecutorFactory(baseExecutor)
+
+    // Get DEX-specific executor
+    pumpfunExecutor, err := factory.GetExecutor(soltradesdk.DexTypePumpFun)
+    if err != nil {
+        panic(err)
+    }
+
+    // Create trading client
+    client := trading.NewTradingClient(factory)
+
+    // Execute buy on PumpFun
+    result, err := client.Buy(ctx, soltradesdk.DexTypePumpFun, params)
+    fmt.Printf("Result: %+v\n", result)
+}
+```
+
+## Address Lookup Tables
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "github.com/0xfnzero/sol-trade-sdk-golang/pkg/addresslookup"
+    "github.com/gagliardetto/solana-go"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // Fetch ALT from chain
+    alt, err := addresslookup.FetchAddressLookupTableAccount(
+        ctx,
+        rpcClient,
+        solana.MustPublicKeyFromBase58("..."),
+    )
+    if err != nil {
+        panic(err)
+    }
+
+    fmt.Printf("ALT contains %d addresses\n", len(alt.Addresses))
+}
+```
+
 ## Security Features
 
 ```go
-import "github.com/0xfnzero/sol-trade-sdk-golang/pkg/calc"
+package main
 
-// Integer overflow protection
-fee, err := calc.ComputeFee(amount, feeBasisPoints)
-if err != nil {
-    if err == calc.ErrOverflow {
-        // Handle overflow
+import (
+    "fmt"
+    "github.com/0xfnzero/sol-trade-sdk-golang/pkg/calc"
+    "github.com/0xfnzero/sol-trade-sdk-golang/pkg/security"
+)
+
+func main() {
+    // Integer overflow protection
+    fee, err := calc.ComputeFee(amount, feeBasisPoints)
+    if err != nil {
+        if err == calc.ErrOverflow {
+            // Handle overflow
+            fmt.Println("Integer overflow detected")
+        }
     }
-}
 
-// Safe calculations with error handling
-output, err := calc.CalculateOutputAmount(input, inputReserve, outputReserve)
-if err != nil {
-    log.Fatal(err)
+    // Input validation
+    err := security.ValidateAmount(amount, "amount")
+    if err != nil {
+        panic(err)
+    }
+
+    // Secure key storage
+    storage, err := security.NewSecureKeyStorage(keypair)
+    if err != nil {
+        panic(err)
+    }
+    defer storage.Clear()
 }
 ```
 
@@ -112,48 +235,122 @@ if err != nil {
 
 | Package | Description |
 |---------|-------------|
+| `pkg/addresslookup` | Address Lookup Table support |
 | `pkg/cache` | LRU, TTL, and sharded caches |
 | `pkg/calc` | AMM calculations with overflow detection |
 | `pkg/common` | Core types, gas strategies, errors |
+| `pkg/execution` | Branch optimization, prefetching |
 | `pkg/hotpath` | Zero-RPC hot path execution |
-| `pkg/instruction` | Instruction builders |
+| `pkg/instruction` | Instruction builders for all DEXes |
+| `pkg/middleware` | Instruction middleware system |
+| `pkg/perf` | Performance optimizations (SIMD, kernel bypass, etc.) |
 | `pkg/pool` | Connection and worker pools |
 | `pkg/rpc` | High-performance RPC clients |
 | `pkg/seed` | PDA derivation for all protocols |
-| `pkg/swqos` | MEV provider clients |
+| `pkg/security` | Secure key storage, validators |
+| `pkg/swqos` | MEV provider clients (19 providers) |
 | `pkg/trading` | High-performance trade executor |
+
+## Performance Optimizations
+
+### Kernel Bypass (Linux io_uring)
+```go
+import "github.com/0xfnzero/sol-trade-sdk-golang/pkg/perf"
+
+ring := perf.NewIOUring(256)
+defer ring.Close()
+```
+
+### SIMD Vectorization
+```go
+import "github.com/0xfnzero/sol-trade-sdk-golang/pkg/perf"
+
+// Use SIMD-optimized hash functions
+hashes := perf.VectorizedHash(dataList)
+```
+
+### Compiler Optimizations
+```go
+import "github.com/0xfnzero/sol-trade-sdk-golang/pkg/perf"
+
+// Likely/unlikely hints for branch prediction
+if perf.Likely(condition) {
+    // Fast path
+}
+```
 
 ## Supported Protocols
 
 ### PumpFun
-- Bonding curve calculations
+- Bonding curve calculations with creator fee support
 - Buy/Sell instruction building
-- PDA derivation
+- PDA derivation for bonding curve and associated accounts
 
 ### PumpSwap
-- Pool calculations
-- Fee breakdown (LP, protocol, curve)
-- Instruction building
+- Pool calculations with LP/protocol/creator fees
+- Buy/Sell instruction building
+- Mayhem mode support
+
+### Bonk
+- Virtual/real reserve calculations
+- Protocol fee handling
 
 ### Raydium
-- AMM V4 calculations
+- AMM V4 calculations with constant product
 - CPMM calculations
 - Authority PDA derivation
 
 ### Meteora
-- DAMM V2 support
+- DAMM V2 swap calculations
 - Pool PDA derivation
 
-## SWQoS Providers
+## SWQoS Providers (19 Total)
 
 | Provider | Min Tip | Features |
 |----------|---------|----------|
-| Jito | 0.001 SOL | Bundle support, gRPC |
-| Bloxroute | 0.0003 SOL | High reliability |
-| ZeroSlot | 0.0001 SOL | Low latency |
+| Jito | 0.001 SOL | Bundle support, gRPC, multi-region |
+| Bloxroute | 0.0003 SOL | High reliability, global distribution |
+| ZeroSlot | 0.0001 SOL | Zero-slot landing |
+| NextBlock | 0.0001 SOL | Next block priority |
 | Temporal | 0.0001 SOL | Fast confirmation |
+| Node1 | 0.0001 SOL | Direct validator access |
 | FlashBlock | 0.0001 SOL | Competitive pricing |
-| Helius | 0.000005 SOL | SWQoS-only mode |
+| BlockRazor | 0.0001 SOL | MEV protection |
+| Astralane | 0.0001 SOL | Fast submission |
+| Stellium | 0.0001 SOL | Global infrastructure |
+| Lightspeed | 0.0001 SOL | Low latency |
+| Soyas | 0.0001 SOL | MEV protection |
+| Speedlanding | 0.0001 SOL | Fast landing |
+| Helius | 0.000005 SOL | SWQoS-only mode, enhanced APIs |
+| Triton | Variable | Enterprise RPC |
+| QuickNode | Variable | Enterprise RPC |
+| Syndica | Variable | Enterprise RPC |
+| Figment | Variable | Enterprise RPC |
+| Alchemy | Variable | Enterprise RPC |
+
+## Middleware System
+
+```go
+package main
+
+import (
+    "github.com/0xfnzero/sol-trade-sdk-golang/pkg/middleware"
+)
+
+func main() {
+    manager := middleware.NewMiddlewareManager()
+    manager.AddMiddleware(&middleware.ValidationMiddleware{
+        MaxInstructions: 100,
+        MaxDataSize:     10000,
+    })
+    manager.AddMiddleware(&middleware.LoggingMiddleware{})
+
+    // Apply middlewares to instructions
+    processed, err := manager.ApplyMiddlewaresProcessProtocolInstructions(
+        instructions, "PumpFun", true,
+    )
+}
+```
 
 ## Requirements
 

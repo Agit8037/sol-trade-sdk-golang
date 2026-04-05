@@ -33,10 +33,11 @@
 ## 特性
 
 - **多 DEX 支持**: PumpFun、PumpSwap、Bonk、Raydium AMM V4、Raydium CPMM、Meteora DAMM V2
-- **SWQoS 集成**: Jito、Bloxroute、ZeroSlot、Temporal、FlashBlock、Helius 等
+- **19 个 SWQoS 提供商**: Jito、Bloxroute、ZeroSlot、NextBlock、Temporal、Node1、FlashBlock、BlockRazor、Astralane、Stellium、Lightspeed、Soyas、Speedlanding、Helius、Triton、QuickNode、Syndica、Figment、Alchemy
 - **高性能**: LRU/TTL/分片缓存、连接池、并行执行
 - **低延迟**: 针对亚秒级交易执行优化
 - **安全优先**: 使用 `math/bits` 的整数溢出保护、正确的错误处理
+- **零-RPC 热路径**: 所有 RPC 调用在交易执行前完成
 - **类型安全**: 强类型，带全面的错误返回
 - **模块化设计**: 按需使用
 
@@ -47,6 +48,8 @@ go get github.com/0xfnzero/sol-trade-sdk-golang
 ```
 
 ## 快速开始
+
+### 基本交易
 
 ```go
 package main
@@ -88,16 +91,77 @@ func main() {
 }
 ```
 
+### PumpFun 交易
+
+```go
+import (
+    "github.com/0xfnzero/sol-trade-sdk-golang/pkg/instruction/pumpfun"
+    "github.com/0xfnzero/sol-trade-sdk-golang/pkg/calc"
+)
+
+// 计算输入 SOL 可获得的代币数量
+tokens, err := calc.PumpFunBuyTokenAmountFromSolAmount(
+    1_073_000_000_000_000,  // virtualTokenReserves
+    30_000_000_000,          // virtualSolReserves
+    793_000_000_000_000,     // realTokenReserves
+    true,                    // hasCreator
+    1_000_000_000,           // amount (1 SOL)
+)
+if err != nil {
+    log.Fatal(err)
+}
+
+// 构建买入指令
+builder := pumpfun.NewInstructionBuilder()
+instructions, err := builder.BuildBuyInstructions(
+    payer,
+    tokenMint,
+    1_000_000_000,          // inputAmount
+    500,                     // slippageBasisPoints (5%)
+    bondingCurve,
+    creatorVault,
+    associatedBondingCurve,
+)
+```
+
+### 热路径执行（零-RPC 交易）
+
+```go
+import (
+    "github.com/0xfnzero/sol-trade-sdk-golang/pkg/hotpath"
+)
+
+// 使用预取数据初始化热路径状态
+state := hotpath.NewState()
+err := state.PrefetchBlockhash(rpcClient)
+if err != nil {
+    log.Fatal(err)
+}
+err = state.CacheAccount(tokenAccountPubkey)
+if err != nil {
+    log.Fatal(err)
+}
+
+// 在交易期间无需任何 RPC 调用即可执行
+executor := hotpath.NewExecutor(state)
+result, err := executor.ExecuteTrade(ctx, transaction)
+```
+
 ## 安全特性
 
 ```go
-import "github.com/0xfnzero/sol-trade-sdk-golang/pkg/calc"
+import (
+    "github.com/0xfnzero/sol-trade-sdk-golang/pkg/calc"
+)
 
 // 整数溢出保护
 fee, err := calc.ComputeFee(amount, feeBasisPoints)
 if err != nil {
-    if err == calc.ErrOverflow {
+    if errors.Is(err, calc.ErrOverflow) {
         // 处理溢出
+    }
+    if errors.Is(err, calc.ErrDivisionByZero) {
+        // 处理除零
     }
 }
 
@@ -108,17 +172,33 @@ if err != nil {
 }
 ```
 
+## 地址查找表
+
+```go
+import (
+    "github.com/0xfnzero/sol-trade-sdk-golang/pkg/addresslookup"
+)
+
+// 从链上获取 ALT
+alt, err := addresslookup.FetchAddressLookupTableAccount(ctx, rpcClient, altAddress)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("ALT 包含 %d 个地址\n", len(alt.Addresses))
+```
+
 ## 架构
 
 | 包 | 描述 |
 |-----|------|
 | `pkg/cache` | LRU、TTL 和分片缓存 |
-| `pkg/calc` | 带溢出检测的 AMM 计算 |
-| `pkg/common` | 核心类型、Gas 策略、错误 |
+| `pkg/calc` | 带 `math/bits` 溢出检测的所有 DEX AMM 计算 |
+| `pkg/common` | 核心类型、Gas 策略、联合曲线、错误 |
 | `pkg/hotpath` | 零-RPC 热路径执行 |
-| `pkg/instruction` | 指令构建器 |
+| `pkg/instruction` | 所有 DEX 的指令构建器 |
+| `pkg/middleware` | 指令中间件系统 |
 | `pkg/pool` | 连接池和工作池 |
-| `pkg/rpc` | 高性能 RPC 客户端 |
+| `pkg/rpc` | 高性能 RPC 客户端（同步/异步） |
 | `pkg/seed` | 所有协议的 PDA 派生 |
 | `pkg/swqos` | MEV 提供商客户端 |
 | `pkg/trading` | 高性能交易执行器 |
@@ -126,34 +206,91 @@ if err != nil {
 ## 支持的协议
 
 ### PumpFun
-- 联合曲线计算
+- 带创建者费用支持的联合曲线计算
 - 买卖指令构建
-- PDA 派生
+- 联合曲线和关联账户的 PDA 派生
 
 ### PumpSwap
-- 池计算
-- 费用分解 (LP、协议、曲线)
-- 指令构建
+- 带 LP/协议/创建者费用的池计算
+- 买卖指令构建
+- Mayhem 模式支持
+
+### Bonk
+- 虚拟/真实储备计算
+- 协议费用处理
 
 ### Raydium
-- AMM V4 计算
+- 恒定乘积的 AMM V4 计算
 - CPMM 计算
 - 权限 PDA 派生
 
 ### Meteora
-- DAMM V2 支持
+- DAMM V2 交换计算
 - 池 PDA 派生
 
-## SWQoS 提供商
+## SWQoS 提供商（共 19 个）
 
 | 提供商 | 最低小费 | 特性 |
 |----------|---------|----------|
-| Jito | 0.001 SOL | 捆绑支持、gRPC |
-| Bloxroute | 0.0003 SOL | 高可靠性 |
-| ZeroSlot | 0.0001 SOL | 低延迟 |
+| Jito | 0.001 SOL | 捆绑支持、gRPC、多区域 |
+| Bloxroute | 0.0003 SOL | 高可靠性、全球分布 |
+| ZeroSlot | 0.0001 SOL | 零槽位着陆 |
+| NextBlock | 0.0001 SOL | 下一区块优先 |
 | Temporal | 0.0001 SOL | 快速确认 |
+| Node1 | 0.0001 SOL | 直接验证者访问 |
 | FlashBlock | 0.0001 SOL | 有竞争力的价格 |
-| Helius | 0.000005 SOL | 仅 SWQoS 模式 |
+| BlockRazor | 0.0001 SOL | MEV 保护 |
+| Astralane | 0.0001 SOL | 快速提交 |
+| Stellium | 0.0001 SOL | 全球基础设施 |
+| Lightspeed | 0.0001 SOL | 低延迟 |
+| Soyas | 0.0001 SOL | MEV 保护 |
+| Speedlanding | 0.0001 SOL | 快速着陆 |
+| Helius | 0.000005 SOL | 仅 SWQoS 模式、增强 API |
+| Triton | 可变 | 企业级 RPC |
+| QuickNode | 可变 | 企业级 RPC |
+| Syndica | 可变 | 企业级 RPC |
+| Figment | 可变 | 企业级 RPC |
+| Alchemy | 可变 | 企业级 RPC |
+
+## 中间件系统
+
+```go
+import (
+    "github.com/0xfnzero/sol-trade-sdk-golang/pkg/middleware"
+)
+
+manager := middleware.NewManager()
+manager.Add(middleware.NewValidationMiddleware(100)) // max 100 instructions
+manager.Add(middleware.NewTimerMiddleware())
+
+// 将中间件应用于指令
+processed, err := manager.Apply(instructions, "PumpFun", true)
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+## 高性能交易执行器
+
+```go
+import (
+    "github.com/0xfnzero/sol-trade-sdk-golang/pkg/trading"
+)
+
+// 创建带并行 SWQoS 提交的高性能执行器
+config := &trading.Config{
+    SwqosConfigs: []common.SwqosConfig{
+        {Type: common.SwqosTypeJito},
+        {Type: common.SwqosTypeBloxroute},
+        {Type: common.SwqosTypeZeroSlot},
+    },
+    ParallelSubmission: true,
+    FirstSuccessWins:   true,
+}
+
+executor := trading.NewHighPerfExecutor(rpcClient, config, gasStrategy)
+result, err := executor.Execute(ctx, tradeType, transaction, opts)
+```
 
 ## 环境要求
 
