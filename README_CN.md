@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-    <a href="https://pkg.go.dev/github.com/sol-trade-sdk/sol-trade-sdk-golang">
-        <img src="https://pkg.go.dev/badge/github.com/sol-trade-sdk/sol-trade-sdk-golang.svg" alt="Go Reference">
+    <a href="https://pkg.go.dev/github.com/0xfnzero/sol-trade-sdk-golang">
+        <img src="https://pkg.go.dev/badge/github.com/0xfnzero/sol-trade-sdk-golang.svg" alt="Go Reference">
     </a>
     <a href="LICENSE">
         <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
@@ -43,7 +43,7 @@
 ## 安装
 
 ```bash
-go get github.com/sol-trade-sdk/sol-trade-sdk-golang
+go get github.com/0xfnzero/sol-trade-sdk-golang
 ```
 
 ## 快速开始
@@ -56,9 +56,9 @@ import (
     "fmt"
     "log"
 
-    soltradesdk "github.com/sol-trade-sdk/sol-trade-sdk-golang"
-    "github.com/sol-trade-sdk/sol-trade-sdk-golang/pkg/common"
-    "github.com/sol-trade-sdk/sol-trade-sdk-golang/pkg/trading"
+    soltradesdk "github.com/0xfnzero/sol-trade-sdk-golang"
+    "github.com/0xfnzero/sol-trade-sdk-golang/pkg/common"
+    "github.com/0xfnzero/sol-trade-sdk-golang/pkg/trading"
 )
 
 func main() {
@@ -91,7 +91,7 @@ func main() {
 ## 安全特性
 
 ```go
-import "github.com/sol-trade-sdk/sol-trade-sdk-golang/pkg/calc"
+import "github.com/0xfnzero/sol-trade-sdk-golang/pkg/calc"
 
 // 整数溢出保护
 fee, err := calc.ComputeFee(amount, feeBasisPoints)
@@ -197,6 +197,6 @@ MIT License
 ## 联系方式
 
 - 官方网站: https://fnzero.dev/
-- 项目仓库: https://github.com/sol-trade-sdk/sol-trade-sdk-golang
+- 项目仓库: https://github.com/0xfnzero/sol-trade-sdk-golang
 - Telegram 群组: https://t.me/fnzero_group
 - Discord: https://discord.gg/vuazbGkqQE

@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-    <a href="https://pkg.go.dev/github.com/sol-trade-sdk/sol-trade-sdk-golang">
-        <img src="https://pkg.go.dev/badge/github.com/sol-trade-sdk/sol-trade-sdk-golang.svg" alt="Go Reference">
+    <a href="https://pkg.go.dev/github.com/0xfnzero/sol-trade-sdk-golang">
+        <img src="https://pkg.go.dev/badge/github.com/0xfnzero/sol-trade-sdk-golang.svg" alt="Go Reference">
     </a>
     <a href="LICENSE">
         <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
@@ -43,7 +43,7 @@ A comprehensive, high-performance Go SDK for Solana DEX trading with support for
 ## Installation
 
 ```bash
-go get github.com/sol-trade-sdk/sol-trade-sdk-golang
+go get github.com/0xfnzero/sol-trade-sdk-golang
 ```
 
 ## Quick Start
@@ -56,9 +56,9 @@ import (
     "fmt"
     "log"
 
-    soltradesdk "github.com/sol-trade-sdk/sol-trade-sdk-golang"
-    "github.com/sol-trade-sdk/sol-trade-sdk-golang/pkg/common"
-    "github.com/sol-trade-sdk/sol-trade-sdk-golang/pkg/trading"
+    soltradesdk "github.com/0xfnzero/sol-trade-sdk-golang"
+    "github.com/0xfnzero/sol-trade-sdk-golang/pkg/common"
+    "github.com/0xfnzero/sol-trade-sdk-golang/pkg/trading"
 )
 
 func main() {
@@ -91,7 +91,7 @@ func main() {
 ## Security Features
 
 ```go
-import "github.com/sol-trade-sdk/sol-trade-sdk-golang/pkg/calc"
+import "github.com/0xfnzero/sol-trade-sdk-golang/pkg/calc"
 
 // Integer overflow protection
 fee, err := calc.ComputeFee(amount, feeBasisPoints)
@@ -197,6 +197,6 @@ MIT License
 ## Contact
 
 - Official Website: https://fnzero.dev/
-- Project Repository: https://github.com/sol-trade-sdk/sol-trade-sdk-golang
+- Project Repository: https://github.com/0xfnzero/sol-trade-sdk-golang
 - Telegram Group: https://t.me/fnzero_group
 - Discord: https://discord.gg/vuazbGkqQE

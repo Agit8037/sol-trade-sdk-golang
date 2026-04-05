@@ -1,4 +1,4 @@
-module github.com/sol-trade-sdk/sol-trade-sdk-golang
+module github.com/0xfnzero/sol-trade-sdk-golang
 
 go 1.21
 
