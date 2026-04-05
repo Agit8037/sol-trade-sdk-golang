@@ -173,6 +173,19 @@ func main() {
 | Create and configure TradingClient instance | [examples/trading_client](examples/trading_client/main.go) | `go run ./examples/trading_client` |
 | Share infrastructure across multiple wallets | [examples/shared_infrastructure](examples/shared_infrastructure/main.go) | `go run ./examples/shared_infrastructure` |
 | PumpFun token sniping trading | [examples/pumpfun_sniper_trading](examples/pumpfun_sniper_trading/main.go) | `go run ./examples/pumpfun_sniper_trading` |
+| PumpFun token copy trading | [examples/pumpfun_copy_trading](examples/pumpfun_copy_trading/main.go) | `go run ./examples/pumpfun_copy_trading` |
+| PumpSwap trading operations | [examples/pumpswap_trading](examples/pumpswap_trading/main.go) | `go run ./examples/pumpswap_trading` |
+| PumpSwap direct trading (via RPC) | [examples/pumpswap_direct_trading](examples/pumpswap_direct_trading/main.go) | `go run ./examples/pumpswap_direct_trading` |
+| Raydium CPMM trading operations | [examples/raydium_cpmm_trading](examples/raydium_cpmm_trading/main.go) | `go run ./examples/raydium_cpmm_trading` |
+| Raydium AMM V4 trading operations | [examples/raydium_amm_v4_trading](examples/raydium_amm_v4_trading/main.go) | `go run ./examples/raydium_amm_v4_trading` |
+| Meteora DAMM V2 trading operations | [examples/meteora_damm_v2_trading](examples/meteora_damm_v2_trading/main.go) | `go run ./examples/meteora_damm_v2_trading` |
+| Bonk token sniping trading | [examples/bonk_sniper_trading](examples/bonk_sniper_trading/main.go) | `go run ./examples/bonk_sniper_trading` |
+| Bonk token copy trading | [examples/bonk_copy_trading](examples/bonk_copy_trading/main.go) | `go run ./examples/bonk_copy_trading` |
+| Custom instruction middleware example | [examples/middleware_system](examples/middleware_system/main.go) | `go run ./examples/middleware_system` |
+| Address lookup table example | [examples/address_lookup](examples/address_lookup/main.go) | `go run ./examples/address_lookup` |
+| Nonce cache (durable nonce) example | [examples/nonce_cache](examples/nonce_cache/main.go) | `go run ./examples/nonce_cache` |
+| Wrap/unwrap SOL to/from WSOL example | [examples/wsol_wrapper](examples/wsol_wrapper/main.go) | `go run ./examples/wsol_wrapper` |
+| Seed trading example | [examples/seed_trading](examples/seed_trading/main.go) | `go run ./examples/seed_trading` |
 | Gas fee strategy example | [examples/gas_fee_strategy](examples/gas_fee_strategy/main.go) | `go run ./examples/gas_fee_strategy` |
 
 ## Address Lookup Tables
