@@ -43,6 +43,32 @@ A comprehensive, high-performance Go SDK for Solana DEX trading with support for
 
 ## Installation
 
+### Direct Clone (Recommended)
+
+Clone this project to your project directory:
+
+```bash
+cd your_project_root_directory
+git clone https://github.com/0xfnzero/sol-trade-sdk-golang
+```
+
+Add the dependency to your `go.mod`:
+
+```go
+// Add to your go.mod
+require github.com/0xfnzero/sol-trade-sdk-golang v0.0.0
+
+replace github.com/0xfnzero/sol-trade-sdk-golang => ./sol-trade-sdk-golang
+```
+
+Then run:
+
+```bash
+go mod tidy
+```
+
+### Use Go Modules
+
 ```bash
 go get github.com/0xfnzero/sol-trade-sdk-golang
 ```
