@@ -3,10 +3,10 @@ package instruction
 import (
 	"fmt"
 
+	"github.com/gagliardetto/solana-go"
 	soltradesdk "github.com/your-org/sol-trade-sdk-go"
 	"github.com/your-org/sol-trade-sdk-go/pkg/constants"
 	"github.com/your-org/sol-trade-sdk-go/pkg/params"
-	"github.com/gagliardetto/solana-go"
 )
 
 // InstructionBuilder defines the interface for building trade instructions
@@ -17,17 +17,17 @@ type InstructionBuilder interface {
 
 // BuildParams contains parameters for building instructions
 type BuildParams struct {
-	Payer              solana.PublicKey
-	InputMint          solana.PublicKey
-	OutputMint         solana.PublicKey
-	InputAmount        uint64
+	Payer               solana.PublicKey
+	InputMint           solana.PublicKey
+	OutputMint          solana.PublicKey
+	InputAmount         uint64
 	SlippageBasisPoints uint64
-	ProtocolParams     interface{}
-	CreateOutputATA    bool
-	CloseInputATA      bool
-	UseSeedOptimize    bool
-	FixedOutputAmount  *uint64
-	UseExactSolAmount  *bool
+	ProtocolParams      interface{}
+	CreateOutputATA     bool
+	CloseInputATA       bool
+	UseSeedOptimize     bool
+	FixedOutputAmount   *uint64
+	UseExactSolAmount   *bool
 }
 
 // PumpFunInstructionBuilder builds instructions for PumpFun protocol
@@ -187,8 +187,8 @@ func (b *PumpFunInstructionBuilder) BuildSellInstructions(bp *BuildParams) ([]so
 	if protocolParams.BondingCurve.IsCashbackCoin {
 		userVolumeAccumulator := GetUserVolumeAccumulatorPDA(bp.Payer)
 		accounts = append(accounts, solana.AccountMeta{
-			PublicKey: userVolumeAccumulator,
-			IsSigner:  false,
+			PublicKey:  userVolumeAccumulator,
+			IsSigner:   false,
 			IsWritable: true,
 		})
 	}
@@ -444,7 +444,7 @@ func (b *BonkInstructionBuilder) BuildSellInstructions(bp *BuildParams) ([]solan
 	// Build accounts (swap mints for sell)
 	accounts := []solana.AccountMeta{
 		{PublicKey: protocolParams.PoolState, IsSigner: false, IsWritable: true},
-		{PublicKey: bp.InputMint, IsSigner: false, IsWritable: false}, // base mint (selling)
+		{PublicKey: bp.InputMint, IsSigner: false, IsWritable: false},  // base mint (selling)
 		{PublicKey: bp.OutputMint, IsSigner: false, IsWritable: false}, // quote mint
 		{PublicKey: protocolParams.BaseVault, IsSigner: false, IsWritable: true},
 		{PublicKey: protocolParams.QuoteVault, IsSigner: false, IsWritable: true},

@@ -3,8 +3,8 @@ package instruction
 import (
 	"crypto/sha256"
 
-	"github.com/your-org/sol-trade-sdk-go/pkg/constants"
 	"github.com/gagliardetto/solana-go"
+	"github.com/your-org/sol-trade-sdk-go/pkg/constants"
 )
 
 // GetBondingCurvePDA derives the bonding curve PDA for a mint

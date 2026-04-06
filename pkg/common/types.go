@@ -251,6 +251,96 @@ func (b *BondingCurveAccount) GetTokenPrice() float64 {
 	return vSol / vTokens
 }
 
+// GetFinalMarketCapSol calculates the final market cap in SOL after all tokens are sold.
+// 100% from Rust: src/common/bonding_curve.rs get_final_market_cap_sol
+func (b *BondingCurveAccount) GetFinalMarketCapSol(feeBasisPoints uint64) uint64 {
+	totalSellValue := b.getBuyOutPriceInternal(b.RealTokenReserves, feeBasisPoints)
+	totalVirtualValue := b.VirtualSolReserves + totalSellValue
+	totalVirtualTokens := b.VirtualTokenReserves - b.RealTokenReserves
+
+	if totalVirtualTokens == 0 {
+		return 0
+	}
+
+	return (b.TokenTotalSupply * totalVirtualValue) / totalVirtualTokens
+}
+
+func (b *BondingCurveAccount) getBuyOutPriceInternal(amount uint64, feeBasisPoints uint64) uint64 {
+	solTokens := amount
+	if amount < b.RealSolReserves {
+		solTokens = b.RealSolReserves
+	}
+
+	if b.VirtualTokenReserves <= solTokens {
+		return 0
+	}
+
+	totalSellValue := (solTokens * b.VirtualSolReserves) / (b.VirtualTokenReserves - solTokens) + 1
+	fee := (totalSellValue * feeBasisPoints) / 10000
+
+	return totalSellValue + fee
+}
+
+// BondingCurveAccountSize is the size of bonding curve account data (after discriminator)
+const BondingCurveAccountSize = 8 + 8 + 8 + 8 + 8 + 8 + 1 + 32 + 1 + 1 // 77 bytes
+
+// DecodeBondingCurveAccount decodes a BondingCurveAccount from on-chain account data.
+// 100% from Rust: src/common/bonding_curve.rs
+func DecodeBondingCurveAccount(data []byte, account [32]byte) *BondingCurveAccount {
+	if len(data) < BondingCurveAccountSize {
+		return nil
+	}
+
+	offset := 0
+
+	// Check if data starts with discriminator (8 bytes)
+	if len(data) >= 8+BondingCurveAccountSize {
+		// Skip discriminator
+		offset = 8
+	}
+
+	curve := &BondingCurveAccount{
+		Account: account,
+	}
+
+	// virtual_token_reserves: u64
+	curve.VirtualTokenReserves = binary.LittleEndian.Uint64(data[offset:])
+	offset += 8
+
+	// virtual_sol_reserves: u64
+	curve.VirtualSolReserves = binary.LittleEndian.Uint64(data[offset:])
+	offset += 8
+
+	// real_token_reserves: u64
+	curve.RealTokenReserves = binary.LittleEndian.Uint64(data[offset:])
+	offset += 8
+
+	// real_sol_reserves: u64
+	curve.RealSolReserves = binary.LittleEndian.Uint64(data[offset:])
+	offset += 8
+
+	// token_total_supply: u64
+	curve.TokenTotalSupply = binary.LittleEndian.Uint64(data[offset:])
+	offset += 8
+
+	// complete: bool
+	curve.Complete = data[offset] == 1
+	offset += 1
+
+	// creator: Pubkey (32 bytes)
+	copy(curve.Creator[:], data[offset:offset+32])
+	offset += 32
+
+	// is_mayhem_mode: bool
+	curve.IsMayhemMode = data[offset] == 1
+	offset += 1
+
+	// is_cashback_coin: bool
+	curve.IsCashbackCoin = data[offset] == 1
+
+	return curve
+}
+
 // uint128 represents a 128-bit unsigned integer (simplified)
 type uint128 = uint64 // Simplified for Go implementation
 

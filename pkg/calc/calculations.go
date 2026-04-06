@@ -17,6 +17,10 @@ var (
 
 // ===== Validation Functions =====
 
+// MaxSlippageBasisPoints is the maximum allowed slippage (99.99% = 9999 bps)
+// This prevents the wrap amount from doubling when slippage is 100%
+const MaxSlippageBasisPoints uint64 = 9999
+
 // validateAmount checks if amount is valid
 func validateAmount(amount uint64, name string) error {
 	if amount < 0 {
@@ -89,25 +93,36 @@ func CeilDiv(a, b uint64) (uint64, error) {
 
 // CalculateWithSlippageBuy calculates buy amount with slippage protection
 // Includes overflow protection
+//
+// Note: Basis points are clamped to MaxSlippageBasisPoints (9999 = 99.99%)
+// to prevent the amount from doubling when basisPoints = 10000.
 func CalculateWithSlippageBuy(amount uint64, basisPoints uint64) (uint64, error) {
 	if err := validateAmount(amount, "amount"); err != nil {
 		return 0, err
 	}
-	if err := validateBasisPoints(basisPoints); err != nil {
+
+	// Clamp basis points to max 9999 (99.99%) to prevent amount doubling at 100%
+	bps := basisPoints
+	if bps > MaxSlippageBasisPoints {
+		bps = MaxSlippageBasisPoints
+	}
+
+	if err := checkMulOverflow(amount, bps); err != nil {
 		return 0, err
 	}
-	if err := checkMulOverflow(amount, basisPoints); err != nil {
-		return 0, err
-	}
-	slippageAmount := (amount * basisPoints) / 10000
+	slippageAmount := (amount * bps) / 10000
 	if err := checkAddOverflow(amount, slippageAmount); err != nil {
 		return 0, err
 	}
 	return amount + slippageAmount, nil
 }
 
-// CalculateWithSlippageSell calculates sell amount with slippage protection
-// Includes underflow protection
+// CalculateWithSlippageSell calculates sell amount with slippage protection.
+// Includes underflow protection.
+//
+// 100% from Rust: src/utils/calc/common.rs calculate_with_slippage_sell
+//
+// Note: Returns 1 if amount <= basisPoints / 10000 to ensure minimum output.
 func CalculateWithSlippageSell(amount uint64, basisPoints uint64) (uint64, error) {
 	if err := validateAmount(amount, "amount"); err != nil {
 		return 0, err
@@ -115,13 +130,16 @@ func CalculateWithSlippageSell(amount uint64, basisPoints uint64) (uint64, error
 	if err := validateBasisPoints(basisPoints); err != nil {
 		return 0, err
 	}
+
+	// Rust: if amount <= basis_points / 10000 { 1 } else { ... }
+	if amount <= basisPoints/10000 {
+		return 1, nil
+	}
+
 	if err := checkMulOverflow(amount, basisPoints); err != nil {
 		return 0, err
 	}
 	slippageAmount := (amount * basisPoints) / 10000
-	if slippageAmount >= amount {
-		return 0, ErrUnderflow
-	}
 	return amount - slippageAmount, nil
 }
 
@@ -129,8 +147,8 @@ func CalculateWithSlippageSell(amount uint64, basisPoints uint64) (uint64, error
 
 // PumpFun Constants from Rust: src/instruction/utils/pumpfun.rs global_constants
 const (
-	PumpFunFeeBasisPoints     uint64 = 95   // Protocol fee (NOT 100!)
-	PumpFunCreatorFee         uint64 = 30   // Creator fee (NOT 50!)
+	PumpFunFeeBasisPoints      uint64 = 95 // Protocol fee (NOT 100!)
+	PumpFunCreatorFee          uint64 = 30 // Creator fee (NOT 50!)
 	PumpFunInitialVirtualToken        = 1073000000000000
 	PumpFunInitialVirtualSol          = 30000000000
 	PumpFunInitialRealToken           = 793100000000000 // Fixed: was 793000000000000
@@ -211,9 +229,9 @@ func GetSellSolAmountFromTokenAmount(
 
 // PumpSwap Constants from Rust: src/instruction/utils/pumpswap.rs accounts
 const (
-	PumpSwapLPFeeBasisPoints         uint64 = 25   // 0.25% (was 20)
-	PumpSwapProtocolFeeBasisPoints   uint64 = 5    // 0.05% (was 20)
-	PumpSwapCoinCreatorFeeBasisPoints uint64 = 5   // 0.05% (was 10)
+	PumpSwapLPFeeBasisPoints          uint64 = 25 // 0.25% (was 20)
+	PumpSwapProtocolFeeBasisPoints    uint64 = 5  // 0.05% (was 20)
+	PumpSwapCoinCreatorFeeBasisPoints uint64 = 5  // 0.05% (was 10)
 )
 
 // BuyBaseInputResult contains results for buying base tokens with base amount input
@@ -225,16 +243,16 @@ type BuyBaseInputResult struct {
 
 // BuyQuoteInputResult contains results for buying base tokens with quote amount input
 type BuyQuoteInputResult struct {
-	Base                      uint64
+	Base                     uint64
 	InternalQuoteWithoutFees uint64
-	MaxQuote                  uint64
+	MaxQuote                 uint64
 }
 
 // SellBaseInputResult contains results for selling base tokens with base amount input
 type SellBaseInputResult struct {
-	UIQuote                   uint64
-	MinQuote                  uint64
-	InternalQuoteAmountOut    uint64
+	UIQuote                uint64
+	MinQuote               uint64
+	InternalQuoteAmountOut uint64
 }
 
 // SellQuoteInputResult contains results for selling base tokens with quote amount input
@@ -324,9 +342,9 @@ func BuyQuoteInputInternal(
 	maxQuote, _ := CalculateWithSlippageBuy(quote, slippageBasisPoints)
 
 	return &BuyQuoteInputResult{
-		Base:                      baseAmountOut,
+		Base:                     baseAmountOut,
 		InternalQuoteWithoutFees: effectiveQuote,
-		MaxQuote:                  maxQuote,
+		MaxQuote:                 maxQuote,
 	}, nil
 }
 
@@ -434,12 +452,12 @@ func calculateQuoteAmountOut(
 
 // ===== Bonk Calculations =====
 
-// Bonk Constants
+// Bonk Constants - 100% from Rust: src/instruction/utils/bonk.rs accounts
 const (
-	BonkProtocolFeeRate    uint64 = 25   // 0.25%
-	BonkPlatformFeeRate    uint64 = 50   // 0.5%
-	BonkShareFeeRate       uint64 = 25   // 0.25%
-	BonkDefaultVirtualBase uint64 = 1073025605596382
+	BonkProtocolFeeRate     uint64 = 25  // 0.25%
+	BonkPlatformFeeRate     uint64 = 100 // 1%
+	BonkShareFeeRate        uint64 = 0   // 0%
+	BonkDefaultVirtualBase  uint64 = 1073025605596382
 	BonkDefaultVirtualQuote uint64 = 30000852951
 )
 
@@ -516,12 +534,12 @@ func RaydiumCPMMGetAmountOut(
 	numerator := mul128(amountIn, outputReserve)
 	denominator := inputReserve + amountIn
 	amountOut := div128(numerator, denominator)
-	
+
 	if hasFee {
 		// Apply fee
 		amountOut = amountOut * 997 / 1000 // 0.3% fee
 	}
-	
+
 	return amountOut
 }
 
@@ -570,7 +588,7 @@ func RaydiumAmmV4GetAmountOut(
 	// For full 128x64 multiplication, we'd need to handle numeratorFullHi
 	// For Solana amounts, numeratorFullHi should be 0 (amounts < 2^64)
 	_ = numeratorFullHi // Assume 0 for valid Solana amounts
-	
+
 	// denominator = inputReserve * 10000 + amountIn * 9975
 	amountInWithFee := numeratorFullLo
 	denominator := inputReserve*10000 + amountInWithFee
@@ -625,8 +643,8 @@ func CalculatePrice(quoteReserve uint64, baseReserve uint64, quoteDecimals uint8
 
 // MeteoraSwapResult contains the result of a Meteora swap calculation
 type MeteoraSwapResult struct {
-	AmountOut     uint64
-	MinAmountOut  uint64
+	AmountOut    uint64
+	MinAmountOut uint64
 }
 
 // MeteoraDammV2ComputeSwapAmount calculates swap amount for Meteora DAMM V2
@@ -780,12 +798,12 @@ func add128(a, b *Uint128Result) *Uint128Result {
 
 // Error definitions - using CalcError for detailed error reporting
 var (
-	ErrInvalidReserves    = &CalcError{Code: 1, Message: "invalid reserves"}
+	ErrInvalidReserves      = &CalcError{Code: 1, Message: "invalid reserves"}
 	ErrInsufficientReserves = &CalcError{Code: 2, Message: "insufficient reserves"}
-	ErrPoolDepleted       = &CalcError{Code: 3, Message: "pool depleted"}
-	ErrFeesExceedOutput   = &CalcError{Code: 4, Message: "fees exceed output"}
+	ErrPoolDepleted         = &CalcError{Code: 3, Message: "pool depleted"}
+	ErrFeesExceedOutput     = &CalcError{Code: 4, Message: "fees exceed output"}
 	// ErrInvalidInputCalc is used for calculation-specific invalid input errors
-	ErrInvalidInputCalc   = &CalcError{Code: 5, Message: "invalid input"}
+	ErrInvalidInputCalc = &CalcError{Code: 5, Message: "invalid input"}
 )
 
 // CalcError represents a calculation error
@@ -796,4 +814,112 @@ type CalcError struct {
 
 func (e *CalcError) Error() string {
 	return e.Message
+}
+
+// ===== Price Calculation Functions - from Rust: src/utils/price/bonk.rs =====
+
+const (
+	DefaultTokenDecimals = 6
+	SolDecimals          = 9
+)
+
+// PriceTokenInWsol calculates the price of token in WSOL.
+// 100% from Rust: src/utils/price/bonk.rs price_token_in_wsol
+func PriceTokenInWsol(virtualBase, virtualQuote, realBase, realQuote uint64) float64 {
+	return PriceBaseInQuote(virtualBase, virtualQuote, realBase, realQuote, DefaultTokenDecimals, SolDecimals)
+}
+
+// PriceBaseInQuote calculates the price of base in quote.
+// 100% from Rust: src/utils/price/bonk.rs price_base_in_quote
+func PriceBaseInQuote(virtualBase, virtualQuote, realBase, realQuote uint64, baseDecimals, quoteDecimals int) float64 {
+	// Calculate decimal places difference
+	decimalDiff := quoteDecimals - baseDecimals
+	var decimalFactor float64
+	if decimalDiff >= 0 {
+		decimalFactor = math.Pow(10, float64(decimalDiff))
+	} else {
+		decimalFactor = 1.0 / math.Pow(10, float64(-decimalDiff))
+	}
+
+	// Calculate reserves state before price calculation
+	quoteReserves := virtualQuote + realQuote
+	var baseReserves uint64
+	if virtualBase > realBase {
+		baseReserves = virtualBase - realBase
+	}
+
+	if baseReserves == 0 {
+		return 0.0
+	}
+
+	if decimalFactor == 0.0 {
+		return 0.0
+	}
+
+	// Use floating point calculation to avoid precision loss
+	price := (float64(quoteReserves) / float64(baseReserves)) / decimalFactor
+
+	return price
+}
+
+// ===== Price Calculation Functions - from Rust: src/utils/price/common.rs =====
+
+// PriceBaseInQuoteFromReserves calculates the token price in quote based on base and quote reserves.
+// 100% from Rust: src/utils/price/common.rs price_base_in_quote
+func PriceBaseInQuoteFromReserves(baseReserve, quoteReserve uint64, baseDecimals, quoteDecimals uint8) float64 {
+	base := float64(baseReserve) / math.Pow10(int(baseDecimals))
+	quote := float64(quoteReserve) / math.Pow10(int(quoteDecimals))
+	if base == 0.0 {
+		return 0.0
+	}
+	return quote / base
+}
+
+// PriceQuoteInBase calculates the token price in base based on base and quote reserves.
+// 100% from Rust: src/utils/price/common.rs price_quote_in_base
+func PriceQuoteInBase(baseReserve, quoteReserve uint64, baseDecimals, quoteDecimals uint8) float64 {
+	base := float64(baseReserve) / math.Pow10(int(baseDecimals))
+	quote := float64(quoteReserve) / math.Pow10(int(quoteDecimals))
+	if quote == 0.0 {
+		return 0.0
+	}
+	return base / quote
+}
+
+// ===== Price Calculation Functions - from Rust: src/utils/price/pumpfun.rs =====
+
+const (
+	LamportsPerSol = 1_000_000_000
+	Scale          = 1_000_000_000 // PumpFun scale factor
+)
+
+// PriceTokenInSol calculates the token price in SOL based on virtual reserves.
+// 100% from Rust: src/utils/price/pumpfun.rs price_token_in_sol
+func PriceTokenInSol(virtualSolReserves, virtualTokenReserves uint64) float64 {
+	vSol := float64(virtualSolReserves) / float64(LamportsPerSol)
+	vTokens := float64(virtualTokenReserves) / float64(Scale)
+	if vTokens == 0.0 {
+		return 0.0
+	}
+	return vSol / vTokens
+}
+
+// ===== Raydium CLMM Price Calculations - from Rust: src/utils/price/raydium_clmm.rs =====
+
+// PriceToken0InToken1 calculates the price of token0 in token1 from sqrt price.
+// 100% from Rust: src/utils/price/raydium_clmm.rs price_token0_in_token1
+func PriceToken0InToken1(sqrtPriceX64 uint64, decimalsToken0, decimalsToken1 uint8) float64 {
+	sqrtPrice := float64(sqrtPriceX64) / float64(1<<64) // Q64.64 to float
+	priceRaw := sqrtPrice * sqrtPrice                   // Price without decimal adjustment
+	scale := math.Pow(10, float64(decimalsToken0)-float64(decimalsToken1))
+	return priceRaw * scale
+}
+
+// PriceToken1InToken0 calculates the price of token1 in token0 from sqrt price.
+// 100% from Rust: src/utils/price/raydium_clmm.rs price_token1_in_token0
+func PriceToken1InToken0(sqrtPriceX64 uint64, decimalsToken0, decimalsToken1 uint8) float64 {
+	if sqrtPriceX64 == 0 {
+		return 0.0
+	}
+	return 1.0 / PriceToken0InToken1(sqrtPriceX64, decimalsToken0, decimalsToken1)
 }
