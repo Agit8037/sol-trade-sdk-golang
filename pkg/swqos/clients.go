@@ -2,11 +2,19 @@ package swqos
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
-	"math/rand"
+	mathrand "math/rand"
+	"math/big"
 	"net/http"
 	"strings"
 	"sync"
@@ -14,6 +22,7 @@ import (
 
 	soltradesdk "github.com/your-org/sol-trade-sdk-go/pkg"
 	"github.com/gagliardetto/solana-go"
+	"github.com/quic-go/quic-go"
 )
 
 // ===== Type aliases (avoid duplicate definitions with pkg/types.go) =====
@@ -367,7 +376,7 @@ var heliusEndpoints = map[SwqosRegion]string{
 // ===== Helper =====
 
 func randomTipAccount(accounts []string) string {
-	return accounts[rand.Intn(len(accounts))]
+	return accounts[mathrand.Intn(len(accounts))]
 }
 
 // ===== Interfaces =====
@@ -1199,57 +1208,170 @@ func (c *LightspeedClient) MinTipSol() float64       { return MinTipLightspeed }
 
 // ===== Soyas Client =====
 
-// SoyasClient represents a Soyas SWQOS client (QUIC-based, HTTP fallback)
+// newSolanaTPUTLSConfig generates a self-signed Ed25519 certificate for QUIC mTLS,
+// matching the pattern used by solana-tls-utils / go-solana-tpu.
+func newSolanaTPUTLSConfig(serverName string) (*tls.Config, error) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("generate ed25519 key: %w", err)
+	}
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 62))
+	if err != nil {
+		return nil, fmt.Errorf("generate serial: %w", err)
+	}
+	tmpl := &x509.Certificate{
+		Version:            3,
+		SerialNumber:       serial,
+		Subject:            pkix.Name{CommonName: "Solana node"},
+		Issuer:             pkix.Name{CommonName: "Solana node"},
+		SignatureAlgorithm: x509.PureEd25519,
+		NotBefore:          time.Date(1975, 1, 1, 0, 0, 0, 0, time.UTC),
+		NotAfter:           time.Date(4096, 1, 1, 0, 0, 0, 0, time.UTC),
+		// SubjectAltName: IP 0.0.0.0 (OID 2.5.29.17)
+		ExtraExtensions: []pkix.Extension{
+			{Id: asn1.ObjectIdentifier{2, 5, 29, 17}, Value: []byte{0x30, 0x06, 0x87, 0x04, 0, 0, 0, 0}},
+		},
+	}
+	derBytes, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, pub, priv)
+	if err != nil {
+		return nil, fmt.Errorf("create certificate: %w", err)
+	}
+	privBytes, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		return nil, fmt.Errorf("marshal private key: %w", err)
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privBytes})
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("X509KeyPair: %w", err)
+	}
+	return &tls.Config{
+		InsecureSkipVerify: true, //nolint:gosec // server cert is not verified (matches Rust/Agave behavior)
+		NextProtos:         []string{"solana-tpu"},
+		Certificates:       []tls.Certificate{cert},
+		MinVersion:         tls.VersionTLS13,
+		ServerName:         serverName,
+	}, nil
+}
+
+// sendViaQUIC opens a QUIC connection to addr, sends serialized tx bytes on a
+// unidirectional stream, then closes the stream. Matches go-solana-tpu behavior.
+func sendViaQUIC(ctx context.Context, addr, serverName string, txBytes []byte) error {
+	tlsCfg, err := newSolanaTPUTLSConfig(serverName)
+	if err != nil {
+		return err
+	}
+	conn, err := quic.DialAddr(ctx, addr, tlsCfg, &quic.Config{
+		MaxIdleTimeout:  30 * time.Second,
+		KeepAlivePeriod: 25 * time.Second,
+	})
+	if err != nil {
+		return fmt.Errorf("QUIC dial %s: %w", addr, err)
+	}
+	defer conn.CloseWithError(0, "done") //nolint:errcheck
+	stream, err := conn.OpenUniStreamSync(ctx)
+	if err != nil {
+		return fmt.Errorf("open QUIC stream: %w", err)
+	}
+	if _, err = stream.Write(txBytes); err != nil {
+		return fmt.Errorf("write QUIC stream: %w", err)
+	}
+	return stream.Close()
+}
+
+// SoyasClient submits transactions via QUIC (Solana TPU ALPN "solana-tpu").
+// Server name for TLS SNI: "soyas-landing" (matches Rust SDK).
 type SoyasClient struct {
-	endpoint  string // QUIC endpoint host:port
-	authToken string // base58 keypair used for mTLS
+	endpoint   string // host:port e.g. nyc.landing.soyas.xyz:9000
+	serverName string // TLS SNI
 }
 
-// NewSoyasClient creates a new Soyas client
-func NewSoyasClient(endpoint, authToken string) *SoyasClient {
-	return &SoyasClient{endpoint: endpoint, authToken: authToken}
+// NewSoyasClient creates a new Soyas QUIC client.
+func NewSoyasClient(endpoint, _ string) *SoyasClient {
+	return &SoyasClient{endpoint: endpoint, serverName: "soyas-landing"}
 }
 
-// SendTransaction submits via standard RPC as fallback (native is QUIC/mTLS)
 func (c *SoyasClient) SendTransaction(ctx context.Context, tradeType TradeType, transaction []byte, waitConfirmation bool) (solana.Signature, error) {
-	// Soyas uses QUIC with mTLS - HTTP submission not natively supported.
-	// Return not-implemented error; callers should use QUIC transport directly.
-	return solana.Signature{}, &TradeError{Code: 501, Message: "Soyas requires QUIC transport"}
+	if err := sendViaQUIC(ctx, c.endpoint, c.serverName, transaction); err != nil {
+		return solana.Signature{}, &TradeError{Code: 500, Message: fmt.Sprintf("Soyas QUIC: %v", err)}
+	}
+	return solana.Signature{}, nil
 }
 
 func (c *SoyasClient) SendTransactions(ctx context.Context, tradeType TradeType, transactions [][]byte, waitConfirmation bool) ([]solana.Signature, error) {
-	return nil, &TradeError{Code: 501, Message: "Soyas requires QUIC transport"}
+	sigs := make([]solana.Signature, 0, len(transactions))
+	for _, tx := range transactions {
+		sig, err := c.SendTransaction(ctx, tradeType, tx, waitConfirmation)
+		if err != nil {
+			return sigs, err
+		}
+		sigs = append(sigs, sig)
+	}
+	return sigs, nil
 }
 
-func (c *SoyasClient) GetTipAccount() string    { return randomTipAccount(soyasTipAccounts) }
-func (c *SoyasClient) GetSwqosType() SwqosType  { return SwqosTypeSoyas }
-func (c *SoyasClient) MinTipSol() float64       { return MinTipSoyas }
+func (c *SoyasClient) GetTipAccount() string   { return randomTipAccount(soyasTipAccounts) }
+func (c *SoyasClient) GetSwqosType() SwqosType { return SwqosTypeSoyas }
+func (c *SoyasClient) MinTipSol() float64      { return MinTipSoyas }
 
 // ===== Speedlanding Client =====
 
-// SpeedlandingClient represents a Speedlanding SWQOS client (QUIC-based, HTTP fallback)
+// SpeedlandingClient submits transactions via QUIC (Solana TPU ALPN "solana-tpu").
+// SNI is derived from the endpoint hostname (e.g. "nyc.speedlanding.trade").
 type SpeedlandingClient struct {
-	endpoint  string // QUIC endpoint host:port
-	authToken string // base58 keypair used for mTLS
+	endpoint   string // host:port e.g. nyc.speedlanding.trade:17778
+	serverName string // TLS SNI derived from endpoint host
 }
 
-// NewSpeedlandingClient creates a new Speedlanding client
-func NewSpeedlandingClient(endpoint, authToken string) *SpeedlandingClient {
-	return &SpeedlandingClient{endpoint: endpoint, authToken: authToken}
+// serverNameFromEndpoint extracts the hostname for TLS SNI, falling back to
+// "speed-landing" for bare IPs (matches Rust SDK behavior).
+func serverNameFromEndpoint(endpoint string) string {
+	host := endpoint
+	if i := strings.LastIndex(endpoint, ":"); i >= 0 {
+		host = endpoint[:i]
+	}
+	// If host is an IP address (only digits and dots) use fallback
+	isIP := true
+	for _, ch := range host {
+		if ch != '.' && (ch < '0' || ch > '9') {
+			isIP = false
+			break
+		}
+	}
+	if isIP || host == "" {
+		return "speed-landing"
+	}
+	return host
 }
 
-// SendTransaction submits via QUIC - returns not-implemented for HTTP callers
+// NewSpeedlandingClient creates a new Speedlanding QUIC client.
+func NewSpeedlandingClient(endpoint, _ string) *SpeedlandingClient {
+	return &SpeedlandingClient{endpoint: endpoint, serverName: serverNameFromEndpoint(endpoint)}
+}
+
 func (c *SpeedlandingClient) SendTransaction(ctx context.Context, tradeType TradeType, transaction []byte, waitConfirmation bool) (solana.Signature, error) {
-	return solana.Signature{}, &TradeError{Code: 501, Message: "Speedlanding requires QUIC transport"}
+	if err := sendViaQUIC(ctx, c.endpoint, c.serverName, transaction); err != nil {
+		return solana.Signature{}, &TradeError{Code: 500, Message: fmt.Sprintf("Speedlanding QUIC: %v", err)}
+	}
+	return solana.Signature{}, nil
 }
 
 func (c *SpeedlandingClient) SendTransactions(ctx context.Context, tradeType TradeType, transactions [][]byte, waitConfirmation bool) ([]solana.Signature, error) {
-	return nil, &TradeError{Code: 501, Message: "Speedlanding requires QUIC transport"}
+	sigs := make([]solana.Signature, 0, len(transactions))
+	for _, tx := range transactions {
+		sig, err := c.SendTransaction(ctx, tradeType, tx, waitConfirmation)
+		if err != nil {
+			return sigs, err
+		}
+		sigs = append(sigs, sig)
+	}
+	return sigs, nil
 }
 
-func (c *SpeedlandingClient) GetTipAccount() string    { return randomTipAccount(speedlandingTipAccounts) }
-func (c *SpeedlandingClient) GetSwqosType() SwqosType  { return SwqosTypeSpeedlanding }
-func (c *SpeedlandingClient) MinTipSol() float64       { return MinTipSpeedlanding }
+func (c *SpeedlandingClient) GetTipAccount() string   { return randomTipAccount(speedlandingTipAccounts) }
+func (c *SpeedlandingClient) GetSwqosType() SwqosType { return SwqosTypeSpeedlanding }
+func (c *SpeedlandingClient) MinTipSol() float64      { return MinTipSpeedlanding }
 
 // ===== Helius Client =====
 

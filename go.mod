@@ -1,11 +1,12 @@
 module github.com/your-org/sol-trade-sdk-go
 
-go 1.22
+go 1.24
 
 require (
 	github.com/gagliardetto/solana-go v1.9.0
 	github.com/gorilla/websocket v1.5.1
-	golang.org/x/crypto v0.21.0
+	github.com/quic-go/quic-go v0.59.0
+	golang.org/x/crypto v0.41.0
 )
 
 require (
@@ -39,7 +40,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/shopspring/decimal v1.3.1 // indirect
 	github.com/streamingfast/logging v0.0.0-20220405224725-2755dab2ce75 // indirect
-	github.com/stretchr/testify v1.8.4 // indirect
+	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/teris-io/shortid v0.0.0-20201117134242-e59966efd125 // indirect
 	github.com/tidwall/gjson v1.9.3 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
@@ -50,10 +51,10 @@ require (
 	go.uber.org/multierr v1.9.0 // indirect
 	go.uber.org/ratelimit v0.2.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
-	golang.org/x/net v0.21.0 // indirect
-	golang.org/x/sync v0.3.0 // indirect
-	golang.org/x/sys v0.18.0 // indirect
-	golang.org/x/term v0.18.0 // indirect
+	golang.org/x/net v0.43.0 // indirect
+	golang.org/x/sync v0.16.0 // indirect
+	golang.org/x/sys v0.35.0 // indirect
+	golang.org/x/term v0.34.0 // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
